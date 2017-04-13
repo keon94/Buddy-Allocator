@@ -17,6 +17,9 @@
 
 #include "buddy.h"
 #include "list.h"
+#include <stdbool.h>
+
+#include <math.h>
 
 /**************************************************************************
  * Public Definitions
@@ -51,6 +54,7 @@
 typedef struct {
 	struct list_head list;
 	int max_alloc;
+	bool available;
 	/* TODO: DECLARE NECESSARY MEMBER VARIABLES */
 } page_t;
 
@@ -70,6 +74,14 @@ page_t g_pages[(1<<MAX_ORDER)/PAGE_SIZE];
  * Public Function Prototypes
  **************************************************************************/
 
+ //rounds up x (in bytes) to the next power of 2, if not already a power of 2
+int roundup2(int x){
+	float log2x = log2f((float)x);
+	if(log2x != (int)log2x)
+		return 1<<(int)ceil(log2x);
+	return x;
+}
+
 /**************************************************************************
  * Local Functions
  **************************************************************************/
@@ -82,14 +94,14 @@ void buddy_init()
 	int i;
 	int n_pages = (1<<MAX_ORDER) / PAGE_SIZE;//2^20/2^12 = 256
 	printf("hi\n");
-	int div = 1; //max num of bytes storable per memory level
+	int div = 1, max_allocable_bytes = 1<<MAX_ORDER;
 	for (i = 0; i < n_pages; i++) {
 		/* TODO: INITIALIZE PAGE STRUCTURES */
 		if(i / div > 0)
 			div = div*2;
 		INIT_LIST_HEAD(&g_pages[i].list);
-		g_pages[i].max_alloc = (1<<MAX_ORDER)/div;
-
+		g_pages[i].max_alloc = max_allocable_bytes/div; 
+		g_pages[i].available = true;
 	}
 
 	/* initialize freelist */
@@ -98,8 +110,13 @@ void buddy_init()
 	}
 
 	/* add the entire memory as a freeblock */
-	list_add(&g_pages[0].list, &free_area[MAX_ORDER]); //add g_pages[0] to the last index of free_area [20]
+	list_add(&g_pages[0].list, &free_area[MAX_ORDER]); //g_page[0] can store all 2^20 B, so init the list with it.
+	
+	//for test only, remove later
+	buddy_alloc(131072);
 }
+
+
 
 /**
  * Allocate a memory block.
@@ -118,7 +135,32 @@ void buddy_init()
 void *buddy_alloc(int size)
 {
 	/* TODO: IMPLEMENT THIS FUNCTION */
+	
+	int alloc_bytes = roundup2(size);
+	printf("size: %d ; alloced: %d\n", size , alloc_bytes);
+	
+	int block_level = log2f(alloc_bytes*PAGE_SIZE/1024); //the (starting) free block level to search a free spot in
+	
+	page_t *page;
+	struct list_head* page_list;
+	while(block_level <= MAX_ORDER){
+		
+		list_for_each( page_list, &free_area[block_level] ){
 
+
+		}
+		block_level++;
+	}
+	
+	/*
+	page_t *page;
+	while(level >= MIN_ORDER){
+		page = list_entry((&free_area[level])->next, page_t, list);
+		printf("%d\n",page->max_alloc);
+		if(
+	}
+	*/
+	
 	return NULL;
 }
 

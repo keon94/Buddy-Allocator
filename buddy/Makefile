@@ -1,4 +1,4 @@
-STUDENT_LASTNAMES = XXXXXXX
+STUDENT_LASTNAMES = 2647916
 PROGNAME = buddy
 
 CC = gcc -std=gnu11
@@ -16,7 +16,7 @@ CFILES = simulator.c buddy.c
 HFILES = buddy.h list.h
 
 # Add libraries that need linked as needed (e.g. -lm -lpthread)
-LIBS =
+LIBS = -lm
 
 ZIPNAME = project3-buddy
 
