@@ -34,7 +34,9 @@
 /* address to page index */
 #define ADDR_TO_PAGE(addr) ((unsigned long)((void *)addr - (void *)g_memory) / PAGE_SIZE)
 
-/* find buddy address */
+#define BLOCK_LEVEL_TO_PAGE(block_level) ( (1<<(MAX_ORDER - block_level)) - 1 )
+
+/* find buddy address */  //Block order : o
 #define BUDDY_ADDR(addr, o) (void *)((((unsigned long)addr - (unsigned long)g_memory) ^ (1<<o)) \
 									 + (unsigned long)g_memory)
 
@@ -55,6 +57,7 @@ typedef struct {
 	struct list_head list;
 	int max_alloc;
 	bool available;
+	int index;
 	/* TODO: DECLARE NECESSARY MEMBER VARIABLES */
 } page_t;
 
@@ -68,7 +71,9 @@ struct list_head free_area[MAX_ORDER+1];
 char g_memory[1<<MAX_ORDER]; //2^20 B -- 2^12*2^8 = 256 blocks of 4K total
 
 /* page structures */
-page_t g_pages[(1<<MAX_ORDER)/PAGE_SIZE]; 
+page_t g_pages[(1<<MAX_ORDER)/PAGE_SIZE]; //2^8 = 256
+
+static int largest_available_block_level_index = MAX_ORDER;
 
 /**************************************************************************
  * Public Function Prototypes
@@ -82,6 +87,18 @@ int roundup2(int x){
 	return x;
 }
 
+void test_alloc(){
+	printf("to alloc 80k\n");
+	buddy_alloc(80*1024);
+	buddy_dump();
+	printf("to alloc 60k\n");
+	buddy_alloc(60*1024);
+	buddy_dump();
+	printf("to alloc 80k\n");
+	buddy_alloc(80*1024);
+	buddy_dump();
+}
+
 /**************************************************************************
  * Local Functions
  **************************************************************************/
@@ -93,15 +110,16 @@ void buddy_init()
 {
 	int i;
 	int n_pages = (1<<MAX_ORDER) / PAGE_SIZE;//2^20/2^12 = 256
-	printf("hi\n");
+	//printf("hi\n");
 	int div = 1, max_allocable_bytes = 1<<MAX_ORDER;
 	for (i = 0; i < n_pages; i++) {
 		/* TODO: INITIALIZE PAGE STRUCTURES */
 		if(i / div > 0)
 			div = div*2;
 		INIT_LIST_HEAD(&g_pages[i].list);
-		g_pages[i].max_alloc = max_allocable_bytes/div; 
+		g_pages[i].max_alloc = max_allocable_bytes/div;  // alot of these fields are redundant as it seems, might remove later
 		g_pages[i].available = true;
+		g_pages[i].index = i;
 	}
 
 	/* initialize freelist */
@@ -110,12 +128,64 @@ void buddy_init()
 	}
 
 	/* add the entire memory as a freeblock */
-	list_add(&g_pages[0].list, &free_area[MAX_ORDER]); //g_page[0] can store all 2^20 B, so init the list with it.
+	list_add(&g_pages[0].list, &free_area[MAX_ORDER]); 
 	
 	//for test only, remove later
-	buddy_alloc(131072);
+	//test_alloc();
 }
 
+
+//inquires the free area for the available block level that is closest to the desired level (target block level)
+//returns an int (the block number)
+int request_closest_free_block_level(int block_level){
+	if(block_level > MAX_ORDER){
+		return -1;
+	}
+	if(list_empty(&free_area[block_level])){
+		return request_closest_free_block_level(block_level+1);
+	}
+	else{
+		return block_level;
+	}
+}
+
+
+
+
+void* recursive_alloc(int present_block_level, int target_block_level, int page_offset){ //page offset: the offset of the page in a given block level
+	
+	page_t *page;
+	struct list_head* page_node;
+	int page_index;
+	void* mem_addr = NULL;
+
+	list_for_each( page_node, &free_area[present_block_level] ){
+		//traversal in the list happens for each page_list that does exist
+		page_index = BLOCK_LEVEL_TO_PAGE(present_block_level) + page_offset;
+		
+		if(present_block_level == target_block_level){ //we've reached the target block leve
+			mem_addr = PAGE_TO_ADDR(page_index);  //page index = block_level_init_index + page_offset
+			//remove this page from free mem
+			
+		}		
+		else{
+			list_add(&g_pages[2*page_index+1+page_offset].list, &free_area[present_block_level-1]); //correct index number later
+			list_add(&g_pages[2*page_index+2+page_offset].list, &free_area[present_block_level-1]); //add its buddy
+			mem_addr = recursive_alloc(present_block_level - 1, target_block_level, page_offset);
+		}
+
+		if(mem_addr){
+			list_del(page_node);			
+		  	return mem_addr;
+		}
+		//if we made it here, we will be going into L_R
+		//(move to the next block on this level and repeat)
+		page_offset += (1<<present_block_level)/1024;
+		
+		//page = list_entry( page_list , page_t , list );
+	}
+	return NULL; //if couldn't find any free blocks
+}
 
 
 /**
@@ -137,10 +207,11 @@ void *buddy_alloc(int size)
 	/* TODO: IMPLEMENT THIS FUNCTION */
 	
 	int alloc_bytes = roundup2(size);
-	printf("size: %d ; alloced: %d\n", size , alloc_bytes);
+	printf("REQUESTED: %dB; ALLOCATED: %dB\n", size , alloc_bytes);
 	
-	int block_level = log2f(alloc_bytes*PAGE_SIZE/1024); //the (starting) free block level to search a free spot in
+	int target_block_level = log2f(alloc_bytes); //the (starting) free block level to search a free spot in
 	
+	/*
 	page_t *page;
 	struct list_head* page_list;
 	while(block_level <= MAX_ORDER){
@@ -151,6 +222,12 @@ void *buddy_alloc(int size)
 		}
 		block_level++;
 	}
+	*/
+
+	void *mem_addr_allocd = NULL;
+	int initial_free_level = request_closest_free_block_level(target_block_level);
+	if(initial_free_level)
+		mem_addr_allocd = recursive_alloc(initial_free_level, target_block_level, 0);
 	
 	/*
 	page_t *page;
@@ -161,7 +238,7 @@ void *buddy_alloc(int size)
 	}
 	*/
 	
-	return NULL;
+	return mem_addr_allocd;
 }
 
 /**
@@ -176,6 +253,7 @@ void *buddy_alloc(int size)
 void buddy_free(void *addr)
 {
 	/* TODO: IMPLEMENT THIS FUNCTION */
+	printf("FREEING...(to be implemented. as of now subsequent results ARE erroneous).\n");
 }
 
 /**
@@ -189,6 +267,7 @@ void buddy_dump()
 	for (o = MIN_ORDER; o <= MAX_ORDER; o++) {
 		struct list_head *pos;
 		int cnt = 0;
+		//printf("\nblock level: %d\n", o);
 		list_for_each(pos, &free_area[o]) {
 			cnt++;
 		}
