@@ -88,6 +88,7 @@ int roundup2(int x){
 }
 
 void test_alloc(){
+	/*
 	printf("to alloc 80k\n");
 	buddy_alloc(80*1024);
 	buddy_dump();
@@ -96,6 +97,9 @@ void test_alloc(){
 	buddy_dump();
 	printf("to alloc 80k\n");
 	buddy_alloc(80*1024);
+	buddy_dump();
+	*/
+	buddy_alloc(4*1024);
 	buddy_dump();
 }
 
@@ -131,7 +135,8 @@ void buddy_init()
 	list_add(&g_pages[0].list, &free_area[MAX_ORDER]); 
 	
 	//for test only, remove later
-	//test_alloc();
+	test_alloc();
+	exit(0);
 }
 
 
@@ -169,8 +174,8 @@ void* recursive_alloc(int present_block_level, int target_block_level, int page_
 			
 		}		
 		else{
-			list_add(&g_pages[2*page_index+1+page_offset].list, &free_area[present_block_level-1]); //correct index number later
-			list_add(&g_pages[2*page_index+2+page_offset].list, &free_area[present_block_level-1]); //add its buddy
+			list_add(&g_pages[2*page_index+1].list, &free_area[present_block_level-1]); //correct index number later
+			list_add(&g_pages[2*page_index+2].list, &free_area[present_block_level-1]); //add its buddy
 			mem_addr = recursive_alloc(present_block_level - 1, target_block_level, page_offset);
 		}
 
@@ -226,7 +231,7 @@ void *buddy_alloc(int size)
 
 	void *mem_addr_allocd = NULL;
 	int initial_free_level = request_closest_free_block_level(target_block_level);
-	if(initial_free_level)
+	if(initial_free_level != -1)
 		mem_addr_allocd = recursive_alloc(initial_free_level, target_block_level, 0);
 	
 	/*
