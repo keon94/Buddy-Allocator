@@ -1,16 +1,50 @@
-REQUESTED: 81920B; ALLOCATED: 131072B
+******************************TEST 1 Part 1******************************
+
+REQUESTED: 80.00KB
+	buddy created 0x702e00 at index 128, at block order 19
+	buddy created 0x702800 at index 64, at block order 18
+	buddy created 0x702500 at index 32, at block order 17
+	allocated to addr 0x602200, at block order 17, at page index 0
+ALLOCATED: 128KB
 0:4K 0:8K 0:16K 0:32K 0:64K 1:128K 1:256K 1:512K 0:1024K 
-REQUESTED: 61440B; ALLOCATED: 65536B
+
+
+REQUESTED: 60.00KB
+	buddy created 0x702680 at index 48, at block order 16
+	allocated to addr 0x622200, at block order 16, at page index 32
+ALLOCATED: 64KB
 0:4K 0:8K 0:16K 0:32K 1:64K 0:128K 1:256K 1:512K 0:1024K 
-REQUESTED: 81920B; ALLOCATED: 131072B
+
+
+REQUESTED: 80.00KB
+	buddy created 0x702b00 at index 96, at block order 17
+	allocated to addr 0x642200, at block order 17, at page index 64
+ALLOCATED: 128KB
 0:4K 0:8K 0:16K 0:32K 1:64K 1:128K 0:256K 1:512K 0:1024K 
-FREEING...(to be implemented. as of now subsequent results ARE erroneous).
-0:4K 0:8K 0:16K 0:32K 1:64K 1:128K 0:256K 1:512K 0:1024K 
-REQUESTED: 32768B; ALLOCATED: 32768B
-0:4K 0:8K 0:16K 1:32K 0:64K 1:128K 0:256K 1:512K 0:1024K 
-FREEING...(to be implemented. as of now subsequent results ARE erroneous).
-0:4K 0:8K 0:16K 1:32K 0:64K 1:128K 0:256K 1:512K 0:1024K 
-FREEING...(to be implemented. as of now subsequent results ARE erroneous).
-0:4K 0:8K 0:16K 1:32K 0:64K 1:128K 0:256K 1:512K 0:1024K 
-FREEING...(to be implemented. as of now subsequent results ARE erroneous).
-0:4K 0:8K 0:16K 1:32K 0:64K 1:128K 0:256K 1:512K 0:1024K 
+
+
+FREEING addr 0x602200
+0:4K 0:8K 0:16K 0:32K 1:64K 2:128K 0:256K 1:512K 0:1024K 
+
+
+REQUESTED: 32.00KB
+	buddy created 0x702740 at index 56, at block order 15
+	allocated to addr 0x632200, at block order 15, at page index 48
+ALLOCATED: 32KB
+0:4K 0:8K 0:16K 1:32K 0:64K 2:128K 0:256K 1:512K 0:1024K 
+
+
+FREEING addr 0x622200
+0:4K 0:8K 0:16K 1:32K 1:64K 2:128K 0:256K 1:512K 0:1024K 
+
+
+FREEING addr 0x632200
+	freeing buddy 0x702740 at block order 15, at page index 56
+0:4K 0:8K 0:16K 0:32K 2:64K 2:128K 0:256K 1:512K 0:1024K 
+
+
+FREEING addr 0x642200
+	freeing buddy 0x702b00 at block order 17, at page index 96
+0:4K 0:8K 0:16K 0:32K 2:64K 1:128K 1:256K 1:512K 0:1024K 
+
+******************************TEST 1 Part 2******************************

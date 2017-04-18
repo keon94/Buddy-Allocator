@@ -28,6 +28,14 @@
 #define MAX_ORDER 20
 
 #define PAGE_SIZE (1<<MIN_ORDER)	//2^12 = 4096 = 4k
+
+/* total accessible memory space (in Bytes) */
+#define MEMORY_SIZE (1<<MAX_ORDER)
+
+/*number of pages*/
+#define NUM_OF_PAGES (MEMORY_SIZE/PAGE_SIZE)
+
+
 /* page index to address */
 #define PAGE_TO_ADDR(page_idx) (void *)((page_idx*PAGE_SIZE) + g_memory)
 
@@ -37,9 +45,16 @@
 /* find the block order based on the page index. */
 #define PAGE_TO_BLOCK_ORDER(page_idx) ( MAX_ORDER - (int)(log2f(page_idx + 1)) )
 
+/* returns the index difference between two consecutive pages (say, a page and its buddy) in a given block order */
+#define BUDDY_OFFSET(o) ( NUM_OF_PAGES/(1<<(MAX_ORDER-o)) )
+
 /* find buddy address */  //Block order : o
 #define BUDDY_ADDR(addr, o) (void *)((((unsigned long)addr - (unsigned long)g_memory) ^ (1<<o)) \
 									 + (unsigned long)g_memory)
+
+/* checks if the given page index in the given block order is a buddy index (the L_R index)*/
+#define CHECK_IF_BUDDY(page_idx, o)( (page_idx/BUDDY_OFFSET(o))%2 )
+
 
 #if USE_DEBUG == 1
 #  define PDEBUG(fmt, ...) \
@@ -51,13 +66,14 @@
 #  define IFDEBUG(x)
 #endif
 
-#define TESTING 0
+#define TESTING 0	//Set to 1 to see the steps in the code printf'ed on to the console - for debugging
 
 /**************************************************************************
  * Public Types
  **************************************************************************/
 typedef struct {
 	struct list_head list;
+	int block_order;	//this field indicates in what block order the given page is allocated. If the page is free, this is set to -1
 } page_t;
 
 /**************************************************************************
@@ -67,12 +83,12 @@ typedef struct {
 struct list_head free_area[MAX_ORDER+1];
 
 /* memory area */
-char g_memory[1<<MAX_ORDER]; //2^20 B -- 2^12*2^8 = 256 blocks of 4K total
+char g_memory[MEMORY_SIZE]; //2^20 B -- 2^12*2^8 = 256 blocks of 4K total
 
 /* page structures */
-page_t g_pages[(1<<MAX_ORDER)/PAGE_SIZE]; //2^8 = 256
+page_t g_pages[(MEMORY_SIZE)/PAGE_SIZE]; //2^8 = 256
 
-//static int largest_available_block_order_index = MAX_ORDER;
+
 
 /**************************************************************************
  * Public Function Prototypes
@@ -86,51 +102,7 @@ int roundup2(int x){
 	return x;
 }
 
-void test1(){
-	
-	int *addr1, *addr2, *addr3, *addr4;
-	printf("\n");
-	addr1 = buddy_alloc(80*1024);
-	buddy_dump();
-	printf("\n");
-	addr2 = buddy_alloc(60*1024);
-	buddy_dump();
-	printf("\n");
-	addr3 = buddy_alloc(80*1024);	
-	buddy_dump();
-	
-	printf("\n");
-	buddy_free(addr1);
-	buddy_dump();
 
-	printf("\n");
-	addr4 = buddy_alloc(32*1024);	
-	buddy_dump();
-	
-	printf("\n");
-	buddy_free(addr2);
-	buddy_dump();
-	printf("\n");
-	buddy_free(addr4);
-	buddy_dump();
-	printf("\n");
-	buddy_free(addr3);
-	buddy_dump();
-	printf("\n");
-
-	
-}
-
-void test2(){
-	int *addr1;
-	printf("\n");
-	addr1 = buddy_alloc(44*1024);
-	buddy_dump();
-	printf("\n");
-	buddy_free(addr1);
-	buddy_dump();
-	printf("\n");
-}
 
 /**************************************************************************
  * Local Functions
@@ -142,77 +114,75 @@ void test2(){
 void buddy_init()
 {
 	int i;
-	int n_pages = (1<<MAX_ORDER) / PAGE_SIZE; //2^20/2^12 = 256
-	for (i = 0; i < n_pages; i++) {
+	for (i = 0; i < NUM_OF_PAGES; i++) {
 		INIT_LIST_HEAD(&g_pages[i].list);
+		g_pages[i].block_order = -1;
 	}
 
 	/* initialize freelist */
-	for (i = MIN_ORDER; i <= MAX_ORDER; i++) { //12 to 20
-		INIT_LIST_HEAD(&free_area[i]);  //each free area's head is initialised 
+	for (i = MIN_ORDER; i <= MAX_ORDER; i++) { 
+		INIT_LIST_HEAD(&free_area[i]);  
 	}
 
 	/* add the entire memory as a freeblock */
 	list_add(&g_pages[0].list, &free_area[MAX_ORDER]); 
 	
-	//for test only
-	#if TESTING
-		printf("\n*************************Test 1**************************\n");
-		test1();
-		printf("*************************Test 2**************************\n");
-		test2();
-		exit(EXIT_SUCCESS);
-	#endif
 }
 
 
-//inquires the free area for the available block order that is closest to the desired order (target block order)
-//returns an int (the block number)
+//inquires the free area for the available block order that is closest (lowest) to the desired order (target block order)
+/*
+ * @param block_order the desired block order - guaranteed to be greater than or equal to MIN_ORDER (the page size)
+ * @return the lowest available block order
+*/
 int request_closest_free_block_order(int block_order){
+
+	while(block_order <= MAX_ORDER && list_empty(&free_area[block_order])){
+		block_order++;
+	}	
+
 	if(block_order > MAX_ORDER){
 		return -1;
 	}
-	if(list_empty(&free_area[block_order])){
-		return request_closest_free_block_order(block_order+1);
-	}
-	else{
-		return block_order;
-	}
+	
+	return block_order;
 }
 
-//Allocates a page to memory by removing it from the free_area array. The page is found recursively, for a given target_block_order (based on the demanded page size)
-void *recursive_alloc(int present_block_order, int target_block_order){ //page offset: the offset of the page in a given block order
+//Allocates a block to memory by removing it from the free_area array. This is a helper function to buddy_alloc.
+/* @param starting_block_order the lowest block order that is capable of allocating memory
+ * @param target_block_order the block order to which we ultimately want to make an allocation
+ * @param size size in bytes
+ * @return memory block address
+*/
+void *_buddy_alloc(int starting_block_order, int target_block_order){ 
 	
 	struct list_head* page_node;
 	int page_index;
 	void* mem_addr = NULL;
 
-	list_for_each( page_node, &free_area[present_block_order] ){
-		//traversal in the list happens for each page_list that does exist in the present block
-
-		page_index = (int)((page_t*)page_node - &g_pages[0]);
-		
-		if(present_block_order == target_block_order){ //we've reached the target block order
-			mem_addr = PAGE_TO_ADDR(page_index); 
-			#if TESTING
-				printf("	allocated to addr %p, at block order %d, at page index %d\n", (int*)mem_addr, present_block_order, page_index);	
-			#endif		
-		}		
-		else{
-			list_add_tail(&g_pages[2*page_index+1].list, &free_area[present_block_order-1]); //correct index number later
-			list_add_tail(&g_pages[2*page_index+2].list, &free_area[present_block_order-1]); //add its buddy
-			mem_addr = recursive_alloc(present_block_order-1, target_block_order);
-		}
-
-		if(mem_addr){
-			list_del(page_node);			
-		  	return mem_addr;
-		}
-		//if we made it here, we will be going into L_R
-		//(move to the next page in this block order and repeat)
-		
+	if(!(page_node = (&free_area[starting_block_order])->next)){	//get the first available list_head associated with this block order
+		return NULL;
+	}		
+	page_index = (int)((page_t*)page_node - &g_pages[0]); //get the page index corresponding to this list_head
+	
+	list_del(page_node); //this block order will no longer be free upon allocation, therefore delete it from the free area
+	
+	//add all the required buddies, at each block order
+	for(int block_order = starting_block_order-1; block_order >= target_block_order; --block_order){
+		#if TESTING
+			printf("	buddy created %p at index %d, at block order %d\n", &g_pages[page_index + BUDDY_OFFSET(block_order)].list, page_index + BUDDY_OFFSET(block_order), block_order);
+		#endif	
+		list_add_tail(&g_pages[page_index + BUDDY_OFFSET(block_order)].list, &free_area[block_order]); //add its buddy	
 	}
-	return NULL; //if couldn't find any free pages
+
+	mem_addr = PAGE_TO_ADDR(page_index);	//the memory address of the allocated block
+	g_pages[page_index].block_order = target_block_order;	//we just allocated memory to page_index at this block order, so set this field (used later by buddy_free())
+	
+	#if TESTING
+		printf("	allocated to addr %p, at block order %d, at page index %d\n", (int*)mem_addr, target_block_order, page_index);	
+	#endif
+	
+	return mem_addr;
 }
 
 
@@ -233,51 +203,71 @@ void *recursive_alloc(int present_block_order, int target_block_order){ //page o
 void *buddy_alloc(int size)
 {
 	
-	int alloc_bytes = roundup2(size);
 	#if TESTING
-		printf("REQUESTED: %dB; ALLOCATED: %dB\n", size , alloc_bytes);
+		printf("REQUESTED: %.2fKB\n", (float)size/1024);
 	#endif
 	
-	int target_block_order = log2f(alloc_bytes); //the (starting) free block order to search a free spot in
+	int alloc_bytes;
+	
+	//if the requested size is smaller than the page size then set it to the page size
+	if(size <= PAGE_SIZE)
+		alloc_bytes = PAGE_SIZE;
+	else	
+	 	alloc_bytes = roundup2(size);
 
+	
+	int target_block_order = log2f(alloc_bytes); //the (starting) free block order to search a free spot in
+	
+	
 	void *mem_addr_allocd = NULL;
-	int initial_free_order = request_closest_free_block_order(target_block_order);
-	if(initial_free_order != -1)
-		mem_addr_allocd = recursive_alloc(initial_free_order, target_block_order);
+	
+	//get the lowest block_order that supports allocation. -1 is returned if none is available.
+	int starting_block_order = request_closest_free_block_order(target_block_order);
+	
+	//allocate memory if allowed
+	if(starting_block_order != -1)
+		mem_addr_allocd = _buddy_alloc(starting_block_order, target_block_order);
+
+	#if TESTING
+		printf("ALLOCATED: %dKB\n", (mem_addr_allocd ? alloc_bytes : 0)/1024 );
+	#endif
 	
 	return mem_addr_allocd;
 }
 
-//recursively frees block orders upwards, as long as the buddy of the freeable page index is also free. If not, it will stop, and no longer recurse. 
-//NOTE: This is a tail recursive function that can be trivially converted to an iterative one (with a loop). Will probably do that later, since iteration is a lot better on memory and performance.
-void recursive_free(int block_order, int page_index){
+//iteratively frees block orders upwards, as long as the buddy of the freeable page index is also free. If not, it will stop, and no longer iterate. 
+/*
+ * @param block_order the block order than contains the freeable page
+ * @return page_index the index of the freeable page
+ */
+void _buddy_free(int block_order, int page_index){
 		
-	int buddy_page_index = page_index + ( page_index % 2 == 1 ? 1 : -1) ;
-
-	//check the free area at this block to see if the buddy is available
+	int buddy_page_index;
 	struct list_head* page_node = NULL;
-	bool buddy_is_free = false;
-	list_for_each( page_node, &free_area[block_order] ){
-		if((page_t*)page_node == &g_pages[buddy_page_index]){		
-			list_del(page_node); 	//delete this page's buddy
-			buddy_is_free = true;
-			break;
-		}
-	}
+	bool buddy_is_free = true;
 	
-	#if TESTING
-		printf("	at block order %d, at page index %d\n", block_order, page_index);
-	#endif
+	//if the buddy is free, remove it and redo at the next block level
+	while(buddy_is_free && block_order <= MAX_ORDER){
+		buddy_is_free = false;
+		buddy_page_index = page_index + (CHECK_IF_BUDDY(page_index, block_order) ? -BUDDY_OFFSET(block_order) : BUDDY_OFFSET(block_order)); //get the page index of the buddy based on this page's index
+		list_for_each( page_node, &free_area[block_order] ){
+			if((page_t*)page_node == &g_pages[buddy_page_index]){	//if the buddy was found (in this order)	
+				#if TESTING
+					printf("	freeing buddy %p at block order %d, at page index %d, which is the buddy of page index %d\n", page_node, block_order, buddy_page_index, page_index);
+				#endif
+				list_del(page_node); 	//delete this page's buddy
+				g_pages[buddy_page_index].block_order = -1;	//the buddy page is now free -> -1
+				page_index = (buddy_page_index < page_index ? buddy_page_index : page_index); //set the appropriate page index in the next block order (up). used in the next iteration.
+				buddy_is_free = true;
+				block_order++;				
+				break;
+			}
+		}
+	}		
 
-	//will always go to the 'left' page in the parent block order(L_L)
-	int parent_page_index = (page_index-1)/2;
-
-	if(buddy_is_free){
-		recursive_free( block_order+1 , parent_page_index ); //free the parent block since the buddy of this page was also free
-	}
-	else{
-		list_add_tail(&g_pages[page_index].list, &free_area[block_order]); //buddy page wasn't free, so just free this page (by adding it to the free area)
-	}
+	//once no more buddies remain, add the freed block to the free area
+	list_add_tail(&g_pages[page_index].list, &free_area[block_order]); //free this page
+	g_pages[page_index].block_order = -1;	//this page is now free -> -1
 
 }
 
@@ -293,10 +283,21 @@ void recursive_free(int block_order, int page_index){
 void buddy_free(void *addr)
 {
 
-	int page_index = ADDR_TO_PAGE(addr);	
-	int block_order = PAGE_TO_BLOCK_ORDER(page_index);
+	int page_index = ADDR_TO_PAGE(addr);	//page index of the freeable address
+	int block_order = g_pages[page_index].block_order;	//block order of the freeable page
 	
 	#if TESTING
+
+		if(!addr){
+			fprintf(stderr, "Error: Attempted to free a NULL address.\n");
+			exit(EXIT_FAILURE);
+		}
+		
+		if( page_index < 0 || page_index >= NUM_OF_PAGES ){
+			fprintf(stderr, "Error: Attempted to free an OUT-OF-BOUNDS Address (%p). The valid address range is from %p to %p.\n", (int*)addr, &g_memory[0], &g_memory[MEMORY_SIZE - 1]);
+			exit(EXIT_FAILURE);
+		} 
+		
 		printf("FREEING addr %p\n",  (int*)addr);	
 		/* Make sure we're not double freeing. For Testing Purposes (Although, probably a good thing to have in general, just like the real free() function does) */
 		struct list_head* page_node = NULL;
@@ -306,9 +307,11 @@ void buddy_free(void *addr)
 				exit(EXIT_FAILURE);
 			}
 		}
+	
 	#endif
 	
-	recursive_free(block_order, page_index);
+		//free the page and buddies iteratively
+		_buddy_free(block_order, page_index);
 
 }
 
@@ -323,7 +326,6 @@ void buddy_dump()
 	for (o = MIN_ORDER; o <= MAX_ORDER; o++) {
 		struct list_head *pos;
 		int cnt = 0;
-		//printf("\nblock order: %d\n", o);
 		list_for_each(pos, &free_area[o]) {
 			cnt++;
 		}
