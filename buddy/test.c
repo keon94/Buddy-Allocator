@@ -50,7 +50,7 @@ void test2(){
 	unsigned int *addr1, *addr2, *addr3, *addr4;
     addr1 = addr2 = addr3 = addr4 = NULL;
     buddy_init();
-    #if 1
+
     addr1 = b_alloc(10);
     addr2 = b_alloc(1);
     addr3 = b_alloc(100);
@@ -60,12 +60,38 @@ void test2(){
     b_free(addr2);
     b_free(addr3);
     b_free(addr4);
-    #endif
 
-    #if 1
-        addr1 = b_alloc(32);
-        b_free(addr1);
-    #endif
+    addr1 = b_alloc(43);
+    addr2 = b_alloc(45);
+    b_free(addr1);
+    addr1 = b_alloc(18);
+    addr3 = b_alloc(350);
+    b_free(addr1);
+    b_free(addr3);
+    b_free(addr2);
+
+    unsigned int *addresses[256];
+    for(int i = 0; i < 256; ++i){      
+        addresses[i] = b_alloc(2);
+    }
+
+    for(int i = 0; i < 256; ++i){
+        b_free(addresses[i]);
+    }
+    int total_alloc = 0;
+    for(int i = 18; i >= 1; --i){      
+        if( !(addresses[i] = b_alloc(4*i)) ){
+            printf("Can't Allocate any more. Memory is full.\n");
+        }
+        else
+            total_alloc += 4*i;
+        printf("-----TOTAL MEMORY ALLOCATIONS: %dKB-----\n", total_alloc);
+    }
+
+    for(int i = 18; i >= 1; --i){
+        if(addresses[i])
+            b_free(addresses[i]);
+    }
     
 }
 

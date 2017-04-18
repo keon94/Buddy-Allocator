@@ -27,7 +27,7 @@
 #define MIN_ORDER 12
 #define MAX_ORDER 20
 
-#define PAGE_SIZE (1<<MIN_ORDER)	//2^12 = 4096 = 4k
+#define PAGE_SIZE (1<<MIN_ORDER)	
 
 /* total accessible memory space (in Bytes) */
 #define MEMORY_SIZE (1<<MAX_ORDER)
@@ -66,7 +66,7 @@
 #  define IFDEBUG(x)
 #endif
 
-#define TESTING 0	//Set to 1 to see the steps in the code printf'ed on to the console - for debugging
+#define TESTING 1	//Set to 1 to see the steps in the code printf'ed on to the console - for debugging
 
 /**************************************************************************
  * Public Types
@@ -83,10 +83,10 @@ typedef struct {
 struct list_head free_area[MAX_ORDER+1];
 
 /* memory area */
-char g_memory[MEMORY_SIZE]; //2^20 B -- 2^12*2^8 = 256 blocks of 4K total
+char g_memory[MEMORY_SIZE]; 
 
 /* page structures */
-page_t g_pages[(MEMORY_SIZE)/PAGE_SIZE]; //2^8 = 256
+page_t g_pages[(MEMORY_SIZE)/PAGE_SIZE]; 
 
 
 
@@ -116,7 +116,7 @@ void buddy_init()
 	int i;
 	for (i = 0; i < NUM_OF_PAGES; i++) {
 		INIT_LIST_HEAD(&g_pages[i].list);
-		g_pages[i].block_order = -1;
+		g_pages[i].block_order = -1;	//initialize all pages to "free"
 	}
 
 	/* initialize freelist */
@@ -288,7 +288,7 @@ void buddy_free(void *addr)
 	
 	#if TESTING
 
-		if(!addr){
+		if(!addr || g_pages[page_index].block_order == -1){
 			fprintf(stderr, "Error: Attempted to free a NULL address.\n");
 			exit(EXIT_FAILURE);
 		}
