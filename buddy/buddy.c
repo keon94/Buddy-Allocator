@@ -66,7 +66,7 @@
 #  define IFDEBUG(x)
 #endif
 
-#define TESTING 1	//Set to 1 to see the steps in the code printf'ed on to the console - for debugging
+#define TESTING 0	//Set to 1 to see the steps in the code printf'ed on to the console - for debugging
 
 /**************************************************************************
  * Public Types
